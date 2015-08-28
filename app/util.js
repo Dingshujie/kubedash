@@ -92,6 +92,282 @@ angular.module('kubedash').controller('ChartViewController',
         $scope.items = [];
       });
     });
+function getDate(time)
+{
+	var date = new Date(time);
+	var Y = date.getFullYear() + '-';
+	var M = (date.getMonth()+1 < 10 ? '0'+(date.getMonth()+1) : date.getMonth()+1) + '-';
+	var D = date.getDate() + ' ';
+	var h = date.getHours() + ':';
+	var m = date.getMinutes() + ':';
+	var s = date.getSeconds(); 
+	return Y+M+D+h+m+s;
+}
+// Generic Controllers - Inherited by controllers in views.js
+angular.module('kubedash').controller('ClusterChartViewController',
+    function($scope, $http) {
+
+	
+	   function polldata() {
+		  pollUtilization($scope.memUsage, $scope.memLimit, $scope, 0, "lastMemLimit", $http, function(limit) {
+            return Math.round(limit / 1048576);
+          });
+          pollUtilization($scope.cpuUsage, $scope.cpuLimit, $scope, 1, "lastCPULimit", $http, function(x){return x;});
+          pollStats($scope.stats, $scope, $http);
+	  }
+	  polldata();
+      function data(){
+		
+        var ret = [];
+		console.log($scope.data[0].values.length);
+        for(var i=0;i < $scope.data[0].values.length;i++){
+		
+          ret.push({
+            //period: $scope.data[0]["values"][i].x,
+			period: getDate($scope.data[0].values[i].x),
+            cpu: $scope.data[1].values[i].y.toFixed(2),
+            mem: $scope.data[0].values[i].y.toFixed(2)
+          });
+        }
+		console.log(ret);
+        return ret;
+      }
+      var clusterArea = Morris.Line({
+        element: 'cluster-area',
+        data: data(),
+        xkey: 'period',
+        ykeys: ['cpu', 'mem'],
+        labels: ['cpu', 'mem'],
+        lineWidth: 1,
+        hideHover: 'auto',
+        lineColors: ["#81d5d9", "#a6e182"]
+      });
+      $scope.stamp = (new Date(0)).toISOString();
+      $scope.run = true;
+
+	  setInterval(function(){
+		  //console.log($scope.data);
+		  polldata();
+		  //console.log($scope.data[0].values);
+		  //console.log($scope.data[0].values[0]);
+		  clusterArea.setData(data());
+	  },5000);
+	  //console.log("cluster-area");
+      // Poll for new data every 30 seconds
+      //$scope.pollPromise = function(){
+      //  $interval($scope.poll, 30000);
+      //  clusterArea.setData(data());
+      //}
+
+      // Trigger the first poll as soon as content is loaded
+      //$scope.$watch('$viewContentLoaded', $scope.poll);
+
+      //$scope.$on('$destroy', function () {
+       // $interval.cancel($scope.pollPromise);
+       // $scope.items = [];
+      //});
+    });
+
+// pollUtilization calculates the utilization of a metric,
+// given a usage link and a limit link.
+// The resulting utilization is placed under  $scope.data[idx]
+// The last values of the limit is placed under $scope[lastLimit]
+function pollNameSpaceUtilization($scope, idx, $http){
+  if (!$scope.run) return;
+
+  var memUsage = [];
+  var memLimit = [];
+  var cpuUsage = [];
+  var cpuLimit = [];
+
+  //var memUsage_stamp = $scope.stamp;
+  //var memLimit_stamp = $scope.stamp;
+  //var cpuUsage_stamp = $scope.stamp;
+  //var cpuLimit_stamp = $scope.stamp;
+  var time_stamp = $scope.stamp;
+
+  var memUsageLink = 'api/v1/model/namespaces/' + $scope.items[idx].name + '/metrics/memory-working?start=';
+  var memLimitLink = 'api/v1/model/namespaces/' + $scope.items[idx].name + '/metrics/memory-limit?start=';
+  var cpuUsageLink = 'api/v1/model/namespaces/' + $scope.items[idx].name + '/metrics/cpu-usage?start=';
+  var cpuLimitLink = 'api/v1/model/namespaces/' + $scope.items[idx].name + '/metrics/cpu-limit?start=';
+
+  // Get Memory Metric Usage and store in the time-descending usage array .
+  $http.get(memUsageLink + $scope.stamp)
+      .success(function(data) {
+        if ((data.metrics == undefined) || (data.metrics.length == 0)) {
+          // No metrics are available, postpone
+          return;
+        }
+        for(var i in data.metrics){
+          memUsage.unshift({x: Date.parse(data.metrics[i].timestamp),
+            y: data.metrics[i].value});
+        }
+        time_stamp = Date.parse(time_stamp) >= Date.parse(data.latestTimestamp)?time_stamp:data.latestTimestamp;
+
+        // Get Metric Limit and store in the time-descending limit array .
+        $http.get(memLimitLink + $scope.stamp)
+            .success(function(data) {
+              if ((data.metrics == undefined) || (data.metrics.length == 0)) {
+                // No metrics are available, postpone
+                return;
+              }
+              for(var i in data.metrics){
+                memLimit.unshift({x: Date.parse(data.metrics[i].timestamp),
+                  y: data.metrics[i].value});
+              }
+
+              time_stamp = Date.parse(time_stamp) >= Date.parse(data.latestTimestamp)?time_stamp:data.latestTimestamp;
+
+              // Use the usage and limit arrays to calculate utilization percentage.
+              // Store in the appropriate time-ascending $scope.data array
+              for (var i=0; i < limit.length; i++) {
+                if ((!!usage[i]) && (!!limit[i])) {
+                  $scope.data[idx][0]["values"].push({x: memUsage[i].x, y: (memUsage[i].y / memLimit[i].y)});
+                }
+              }
+
+
+            })
+
+      });
+
+// Get CPU Metric Usage and store in the time-descending usage array .
+  $http.get(cpuUsageLink + $scope.stamp)
+      .success(function(data) {
+        if ((data.metrics == undefined) || (data.metrics.length == 0)) {
+          // No metrics are available, postpone
+          return;
+        }
+        for(var i in data.metrics){
+          cpuUsage.unshift({x: Date.parse(data.metrics[i].timestamp),
+            y: data.metrics[i].value});
+        }
+        time_stamp = Date.parse(time_stamp) >= Date.parse(data.latestTimestamp)?time_stamp:data.latestTimestamp;
+
+        // Get Metric Limit and store in the time-descending limit array .
+        $http.get(cpuLimitLink + $scope.stamp)
+            .success(function(data) {
+              if ((data.metrics == undefined) || (data.metrics.length == 0)) {
+                // No metrics are available, postpone
+                return;
+              }
+              for(var i in data.metrics){
+                cpuLimit.unshift({x: Date.parse(data.metrics[i].timestamp),
+                  y: data.metrics[i].value});
+              }
+
+              time_stamp = Date.parse(time_stamp) >= Date.parse(data.latestTimestamp)?time_stamp:data.latestTimestamp;
+              // Use the usage and limit arrays to calculate utilization percentage.
+              // Store in the appropriate time-ascending $scope.data array
+              for (var i=0; i < limit.length; i++) {
+                if ((!!usage[i]) && (!!limit[i])) {
+                  $scope.data[idx][1]["values"].push({x: cpuUsage[i].x, y: (cpuUsage[i].y / cpuLimit[i].y)});
+                }
+              }
+
+
+            })
+      });
+
+
+  $scope.stamp = time_stamp;
+
+};
+
+// Generic Controllers - Inherited by controllers in views.js
+angular.module('kubedash').controller('NamespacesChartViewController',
+    function($scope, $interval,$http) {
+      function data(offset){
+        var ret = [];
+        for(var i=0;i <= $scope.data[offset][0]["values"].length;i++){
+          ret.push({
+            period: $scope.data[offset][0]["values"][i].x,
+            cpu: $scope.data[offset][1]["values"][i].y,
+            mem: $scope.data[offset][0]["values"][i].y
+          });
+        }
+        return ret;
+      }
+
+      for(var i=0;i <= $scope.items.length;i++){
+        pollNameSpaceUtilization($scope, i, $http)
+      }
+
+      $scope.stamp = (new Date(0)).toISOString();
+      $scope.run = true;
+
+      for(var i=0; i<$scope.items.length;i++){
+        setInterval(function(i){
+          pollNameSpaceUtilization($scope, i, $http)
+          Morris.Line({
+            element: i.toString + '-namespace-area',
+            data: data(i),
+            xkey: 'period',
+            ykeys: ['cpu', 'mem'],
+            labels: ['cpu', 'mem'],
+            lineWidth: 1,
+            hideHover: 'auto',
+            lineColors: ["#5936D7", "#CD2090"]
+          }).setData(data(i))
+        },30000);
+      }
+
+    });
+
+angular.module('kubedash').controller('ClusterUtilizationViewController',
+    function($scope, $controller, $http, $rootScope) {
+
+      $scope.data = [{key: 'Memory Utilization', area: true, values:[]}];
+      $scope.data.push({key: 'CPU Utilization', area: true, values:[]});
+      $scope.messages = [];
+
+      var memLimit = $scope.memLimit;
+      var cpuLimit = $scope.cpuLimit;
+
+      // Initialize the last limit values
+      $scope.lastMemLimit = 0;
+      $scope.lastCPULimit = 0;
+
+      var define_poll = function () {
+        $scope.limitDecided = true;
+        $scope.poll = function() {
+          pollUtilization($scope.memUsage, memLimit, $scope, 0, "lastMemLimit", $http, function(limit) {
+            return Math.round(limit / 1048576);
+          });
+          pollUtilization($scope.cpuUsage, cpuLimit, $scope, 1, "lastCPULimit", $http, function(x){return x;});
+          pollStats($scope.stats, $scope, $http);
+        };
+      }
+
+      // Populate scope.poll only if the limit is sane, compared to the usage.
+      // Otherwise, use the fallback limit.
+      if ((!$scope.memLimitFallback) && (!$scope.cpuLimitFallback)) {
+        define_poll();
+		console.log($scope.data);
+        $controller('ClusterChartViewController', {$scope: $scope});
+        return;
+      }
+
+      testLimitToUsageRatio($scope.memUsage, $scope.memLimit, $http, function() {
+        memLimit = $scope.memLimitFallback;
+        if ($scope.messages.length == 0) {
+          $scope.messages.push("This entity does not have a memory limit, the cluster's memory limit is shown instead");
+        }
+      }, function() {
+        testLimitToUsageRatio($scope.cpuUsage, $scope.cpuLimit, $http, function() {
+          cpuLimit = $scope.cpuLimitFallback;
+          if ($scope.messages.length <= 2) {
+            $scope.messages.push("This entity does not have a CPU limit, the cluster's CPU limit is shown instead");
+          }
+        }, function() {
+          define_poll();
+          $controller('ClusterChartViewController', {$scope: $scope});
+        });
+      });
+
+    });
+
+
 
 angular.module('kubedash').controller('UtilizationViewController', 
     function($scope, $controller, $http, $rootScope) {

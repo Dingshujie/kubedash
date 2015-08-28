@@ -28,7 +28,7 @@ angular.module('kubedash').config(['$locationProvider', '$routeProvider', '$prov
       // route for the Cluster page
       .when('/', {
         templateUrl : 'pages/dashboard.html',
-        controller : 'clusterUtil',
+        controller : 'clustersUtil',
       })
       .when('/cluster', {
         templateUrl : 'pages/cluster.html',

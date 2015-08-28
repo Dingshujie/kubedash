@@ -15,6 +15,25 @@
 'use strict';
 
 // clusterUtil controls the utilization chart and derived stats of the Cluster page
+angular.module('kubedash').controller('clustersUtil', function($scope, $location, $controller) {
+  $scope.memUsage = 'api/v1/model/metrics/memory-working?start=';
+  $scope.memLimit = 'api/v1/model/metrics/memory-limit?start=';
+  $scope.cpuUsage = 'api/v1/model/metrics/cpu-usage?start=';
+  $scope.cpuLimit = 'api/v1/model/metrics/cpu-limit?start=';
+  $scope.stats = 'api/v1/model/stats';
+
+  $scope.listLink = 'api/v1/model/namespaces/';
+  $scope.$location = $location;
+  $scope.goTo = function(ns) {
+    $scope.$location.path("/namespace/" + ns);
+  };
+  $controller('ListingController', {$scope: $scope});
+  $controller('ClusterUtilizationViewController', {$scope: $scope});
+  //$controller('NamespacesChartViewController', {$scope: $scope});
+
+});
+
+// clusterUtil controls the utilization chart and derived stats of the Cluster page
 angular.module('kubedash').controller('clusterUtil', function($scope, $location, $controller) {
   $scope.memUsage = 'api/v1/model/metrics/memory-working?start=';
   $scope.memLimit = 'api/v1/model/metrics/memory-limit?start=';
